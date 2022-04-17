@@ -6,50 +6,66 @@ from numpy_ros import to_numpy, to_message
 from geometry_msgs.msg import Point
 import numpy as np
 import pyvista as pv
+from argparse import ArgumentParser
+
+FILE = "data/aggressive_PID/figure_8.bag"
+FILE = "data/aggressive_PID/racetrack.bag"
+FILE = "data/aggressive_PID/line.bag"
 
 
-FILE = "/home/frc-ag-1/dev/courses/KDC_project/docker_project/ws/data/2022-04-14-17-53-24.bag"
-bag = rosbag.Bag(FILE)
+def parse_args():
+    parser = ArgumentParser()
+    parser.add_argument("--file", default=FILE)
+    args = parser.parse_args()
+    return args
 
-gt_poses = []
-goal_poses = []
-errors = []
 
-for topic, msg, t in bag.read_messages():
-    t = t.to_time()
-    if topic == "/uav1/ground_truth/state":
-        gt_poses.append(
-            [
-                msg.pose.pose.position.x,
-                msg.pose.pose.position.y,
-                msg.pose.pose.position.z,
-                t,
-            ]
-        )
-    elif topic == "/uav1/tracking_point":
-        goal_poses.append(
-            [
-                msg.pose.pose.position.x,
-                msg.pose.pose.position.y,
-                msg.pose.pose.position.z,
-                t,
-            ]
-        )
-    elif topic == "/uav1/tracking_error":
-        errors.append([msg.data, t])
-    else:
-        pdb.set_trace()
+def main(file):
+    bag = rosbag.Bag(file)
 
-gt_poses, goal_poses, errors = [
-    np.stack(x, axis=0) for x in (gt_poses, goal_poses, errors)
-]
+    gt_poses = []
+    goal_poses = []
+    errors = []
 
-plotter = pv.Plotter()
+    for topic, msg, t in bag.read_messages():
+        t = t.to_time()
+        if topic == "/uav1/ground_truth/state":
+            gt_poses.append(
+                [
+                    msg.pose.pose.position.x,
+                    msg.pose.pose.position.y,
+                    msg.pose.pose.position.z,
+                    t,
+                ]
+            )
+        elif topic == "/uav1/tracking_point":
+            goal_poses.append(
+                [
+                    msg.pose.pose.position.x,
+                    msg.pose.pose.position.y,
+                    msg.pose.pose.position.z,
+                    t,
+                ]
+            )
+        elif topic == "/uav1/tracking_error":
+            errors.append([msg.data, t])
+        else:
+            pdb.set_trace()
 
-gt_pc = pv.PolyData(gt_poses[:, :3])
-goal_pc = pv.PolyData(goal_poses[:, :3])
-plotter.add_mesh(gt_pc, color="r")
-plotter.add_mesh(goal_pc, color="b", scalars=errors[:, 0])
-plotter.show()
+    gt_poses, goal_poses, errors = [
+        np.stack(x, axis=0) for x in (gt_poses, goal_poses, errors)
+    ]
 
-pdb.set_trace()
+    plotter = pv.Plotter()
+
+    gt_pc = pv.PolyData(gt_poses[:, :3])
+    goal_pc = pv.PolyData(goal_poses[:, :3])
+
+    plotter.add_mesh(gt_pc, color="r")
+    plotter.add_mesh(goal_pc, color="b", scalars=errors[: len(goal_poses), 0])
+    plotter.show()
+
+
+if __name__ == "__main__":
+    args = parse_args()
+    main(args.file)
