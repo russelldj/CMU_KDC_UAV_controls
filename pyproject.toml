@@ -9,6 +9,8 @@ license = "MIT"
 python = "^3.9"
 pyvista = "^0.34.0"
 matplotlib = "^3.5.1"
+pathlib = {version = "^1.0.1", python = "<3.4"}
+bagpy = "^0.4.8"
 
 [tool.poetry.dev-dependencies]
 black = "^22.3.0"
