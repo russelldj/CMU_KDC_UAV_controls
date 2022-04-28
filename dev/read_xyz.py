@@ -127,6 +127,27 @@ def load_from_file(stem, vis=False):
     return cross_track_error, track_error
 
 
+def show_top_down(files):
+    uavs = []
+    for file in files:
+        uav_csv, goal_csv, errors_csv = [
+            f"{file}{x}" for x in ("_gt.csv", "_goal.csv", "_errors.csv")
+        ]
+        uav, goal, errors = [pd.read_csv(x) for x in (uav_csv, goal_csv, errors_csv)]
+        uavs.append(uav)
+    goal_path = goal.iloc[:, 1:3].to_numpy()
+    uav_paths = [x.iloc[:, 1:3].to_numpy() for x in uavs]
+    plt.scatter(0, -1.25, label="Start/end")
+    plt.plot(goal_path[:, 0], goal_path[:, 1], label="Reference trajectory")
+    plt.plot(uav_paths[0][:, 0], uav_paths[0][:, 1], label="Tracking at 4 m/s")
+    plt.plot(uav_paths[1][:, 0], uav_paths[1][:, 1], label="Tracking at 8 m/s")
+    plt.plot(uav_paths[2][:, 0], uav_paths[2][:, 1], label="Tracking at 12 m/s")
+    plt.legend()
+    plt.title("Example Trajectories")
+    plt.savefig("vis/figure_8s.png")
+    plt.show()
+
+
 if __name__ == "__main__":
     SPEEDS = [4, 8, 12]
 
@@ -134,6 +155,9 @@ if __name__ == "__main__":
 
     files = sorted(Path(args.folder).glob("**/*.bag"))
     sorted_files = files[1:3] + files[0:1] + files[4:6] + files[3:4]
+
+    show_top_down(sorted_files[:3])
+
     cross_track_errors = []
     track_errors = []
 
@@ -143,11 +167,12 @@ if __name__ == "__main__":
         track_errors.append(te)
 
     plt.plot(SPEEDS, cross_track_errors[:3], label="Cross Track Figure 8")
-    plt.plot(SPEEDS, cross_track_errors[3:], label="Cross Track RaceTrack")
+    plt.plot(SPEEDS, cross_track_errors[3:], label="Cross Track Race Track")
     plt.plot(SPEEDS, track_errors[:3], label="Tracking Figure 8")
     plt.plot(SPEEDS, track_errors[3:], label="Tracking Race Track")
     plt.xlabel("Speed (m/s)")
     plt.ylabel("Error")
+    plt.title("Error Metrics")
     plt.legend()
     plt.savefig("vis/error_plot.png")
     plt.show()
