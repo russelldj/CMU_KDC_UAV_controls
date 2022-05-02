@@ -2,9 +2,20 @@ from core_trajectory_msgs.msg import FixedTrajectory
 
 # from dev.publish_trajectory_track import create_trajectory
 from diagnostic_msgs.msg import KeyValue
+from core_trajectory_msgs.msg import TrajectoryXYZVYaw, WaypointXYZVYaw
+from std_msgs.msg import Float32
+from nav_msgs.msg import Odometry
 import numpy as np
 import pdb
 import rospy
+
+
+def tracking_point_callback(data):
+    print(data)
+
+
+def error_callback(data):
+    print(data)
 
 
 def callback(data):
@@ -66,13 +77,14 @@ def publisher():
 
 
 def subscriber():
-    rospy.init_node("listener", anonymous=True)
-    sub = rospy.Subscriber("/uav1/fixed_trajectory", FixedTrajectory, callback)
+    # sub = rospy.Subscriber("/uav1/tracking_error", Float32, error_callback)
+    # sub = rospy.Subscriber("/uav1/tracking_point", Odometry, tracking_point_callback)
+    sub = rospy.Subscriber("/uav1/odometry", Odometry, tracking_point_callback)
     rospy.spin()
 
 
 if __name__ == "__main__":
     # dict_to_key_value_list({"a": "b", "c": 1})
-    # subscriber()
 
     publisher()
+    subscriber()
