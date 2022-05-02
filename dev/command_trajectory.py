@@ -10,17 +10,11 @@ import pdb
 import rospy
 
 
-def tracking_point_callback(data):
-    print(data)
-
-
-def error_callback(data):
-    print(data)
-
-
-def callback(data):
-    print(data)
-    pdb.set_trace()
+def dict_to_key_value_list(d):
+    kv_list = []
+    for k, v in d.iteritems():
+        kv_list.append(KeyValue(str(k), str(v)))
+    return kv_list
 
 
 def create_fixed_trajectory_message(
@@ -50,41 +44,42 @@ def create_fixed_trajectory_message(
     return fixed_trajectory
 
 
-# [key: "frame_id"
-# value: "world", key: "height"
-# value: "10", key: "width"
-# value: "10", key: "length"
-# value: "10", key: "max_acceleration"
-# value: "0.2", key: "velocity"
-# value: "4"]
+class TrajectoryCommander:
+    def __init__(self):
+        pass
 
+    def tracking_point_callback(self, data):
+        print("Tracking point: " + str(data))
 
-def dict_to_key_value_list(d):
-    kv_list = []
-    for k, v in d.iteritems():
-        kv_list.append(KeyValue(str(k), str(v)))
-    return kv_list
+    def odom_callback(self, data):
+        print("Odom: " + str(data))
 
+    def error_callback(self, data):
+        print("Error: " + str(data))
 
-def publisher():
-    pub = rospy.Publisher("/uav1/fixed_trajectory", FixedTrajectory, queue_size=1)
-    rospy.init_node("pose_publisher", anonymous=True)
-    rate = rospy.Rate(2)  # Hz
-    fixed_trajectory = create_fixed_trajectory_message()
+    def publisher(self):
+        pub = rospy.Publisher("/uav1/fixed_trajectory", FixedTrajectory, queue_size=1)
+        rospy.init_node("pose_publisher", anonymous=True)
+        rate = rospy.Rate(2)  # Hz
+        fixed_trajectory = create_fixed_trajectory_message()
 
-    print(fixed_trajectory)
-    pub.publish(fixed_trajectory)
+        print(fixed_trajectory)
+        pub.publish(fixed_trajectory)
 
-
-def subscriber():
-    # sub = rospy.Subscriber("/uav1/tracking_error", Float32, error_callback)
-    # sub = rospy.Subscriber("/uav1/tracking_point", Odometry, tracking_point_callback)
-    sub = rospy.Subscriber("/uav1/odometry", Odometry, tracking_point_callback)
-    rospy.spin()
+    def subscriber(self):
+        self.error_sub = rospy.Subscriber(
+            "/uav1/tracking_error", Float32, self.error_callback
+        )
+        self.tracking_point_sub = rospy.Subscriber(
+            "/uav1/tracking_point", Odometry, self.tracking_point_callback
+        )
+        self.odom_sub = rospy.Subscriber("/uav1/odometry", Odometry, self.odom_callback)
+        rospy.spin()
 
 
 if __name__ == "__main__":
     # dict_to_key_value_list({"a": "b", "c": 1})
 
-    publisher()
-    subscriber()
+    trajectory_commander = TrajectoryCommander()
+    trajectory_commander.publisher()
+    trajectory_commander.subscriber()
