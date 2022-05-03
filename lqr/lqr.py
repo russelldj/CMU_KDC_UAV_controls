@@ -14,25 +14,26 @@ def multiply_quaternions(q_1, q_2, unitize: bool = True):
     """ Return the quaternion product q_1 * q_2 
 
     Args:
-        q_1: (4,) quaternion (i, j, k, 0)
-        q_2: (4,) quaternion (i, j, k, 0)
+        q_1: (4,) quaternion (w, x, y, z)
+        q_2: (4,) quaternion (w, x, y, z)
         unitize: ensure result has unit norm
     
     Returns:
-        (i, j, k, 0)
+        (w, x, y, z)
     """
     assert q_1.shape == (4,)
     assert q_2.shape == (4,)
-    q_out_0 = q_1[3] * q_2[3] - np.dot(q_1[:3], q_2[:3])
-    q_out_v = q_1[3] * q_2[:3] + q_2[3] * q_1[:3] + np.cross(q_1[:3], q_2[:3])
-    q_out = np.concatenate((q_out_v, [q_out_0]), axis=0)
+    q_out_0 = q_1[0] * q_2[0] - np.dot(q_1[1:], q_2[1:])
+    q_out_v = q_1[0] * q_2[1:] + q_2[0] * q_1[1:] + np.cross(q_1[1:], q_2[1:])
+    q_out = np.concatenate(([q_out_0], q_out_v), axis=0)
     if unitize:
         q_out = q_out / np.linalg.norm(q_out)
     return q_out
 
 
 def invert_quaternion(q):
-    q_conj = np.concatenate((-q[:3], [q[3]]))
+    """(w, x, y, z)"""
+    q_conj = np.concatenate(([q[0]], -q[1:]))
     return q_conj
 
 
@@ -90,11 +91,12 @@ class LQRController:
     def compute_error(self, x_spatial_des, q_spatial_des, v_spatial_des):
         x_error = self.x_spatial - x_spatial_des
         v_error = self.v_spatial - v_spatial_des
-
+        # Error formulation taken from
+        # https://github.com/llanesc/lqr-tracking/blob/270f2f5164a668bfb77e19f5191595f1d3913a16/src/lqr_quaternion.cpp#L225
         q_spatial_inv = invert_quaternion(self.q_spatial)
         q_error = multiply_quaternions(q_spatial_inv, q_spatial_des)
         # As done in the paper, the w term is set to zero
-        q_error[3] = 0
+        q_error[0] = 0
         error = np.concatenate((x_error, q_error, v_error), axis=0)
         # print(f"Error {error}")
         return error
@@ -127,7 +129,7 @@ class LQRController:
 
         old_u = self._get_u()
 
-        u = old_u + self.K @ error
+        u = -self.K @ error
         print(u)
         self._set_u(u)
 
@@ -202,19 +204,22 @@ class LQRController:
         self.v_spatial_ref = v_spatial_ref
         self.q_spatial_ref = q_spatial_ref
 
-    def update_state(self, state_dot):
+    def update_state(self, state_dot, linear_quat_integration=True):
         x_dot = state_dot[:3]
         q_dot = state_dot[3:7]
         v_dot = state_dot[7:]
         self.x_spatial = self.x_spatial + self.dt * x_dot
         self.v_spatial = self.v_spatial + self.dt * v_dot
 
-        self.q_spatial = self.q_spatial + self.dt / 2 * multiply_quaternions(
-            self.q_spatial, q_dot
-        )
+        if linear_quat_integration:
+            self.q_spatial = self.q_spatial + self.dt * q_dot
+        else:
+            self.q_spatial = self.q_spatial + self.dt / 2 * multiply_quaternions(
+                self.q_spatial, q_dot
+            )
         self.q_spatial = self.q_spatial / np.linalg.norm(self.q_spatial)
 
-    def simulate(self, duration=5):
+    def simulate(self, duration=3):
         if (
             self.x_spatial_ref is None
             or self.q_spatial_ref is None
@@ -231,7 +236,7 @@ class LQRController:
 
         all_states = np.stack(self.state_history, axis=0)
         names = ("x", "y", "z", "q_x", "q_y", "q_z", "q_w", "x_dot", "y_dot", "z_dot")
-        for i, name in enumerate(names[:3]):
+        for i, name in enumerate(names):
             plt.plot(all_states[:, i], label=name)
         plt.legend()
         plt.show()
