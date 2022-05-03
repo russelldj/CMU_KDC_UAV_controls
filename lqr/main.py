@@ -11,4 +11,4 @@ if __name__ == "__main__":
     controller.set_ref(
         np.array([0, 0, 10]), np.array([0, 0, 0, 1]), np.array([0, 0, 0])
     )
-    controller.simulate()
+    controller.simulate(feedforward_ref=False, linear_quat_integration=True)

@@ -32,7 +32,10 @@ def multiply_quaternions(q_1, q_2, unitize: bool = True):
     q_out_v = q_1[0] * q_2[1:] + q_2[0] * q_1[1:] + np.cross(q_1[1:], q_2[1:])
     q_out = np.concatenate(([q_out_0], q_out_v), axis=0)
     if unitize:
-        q_out = q_out / np.linalg.norm(q_out)
+        q_norm = np.linalg.norm(q_out)
+        if q_norm == 0:
+            breakpoint()
+        q_out = q_out / q_norm
     return q_out
 
 
@@ -103,6 +106,7 @@ class LQRController:
         # Error formulation taken from
         # https://github.com/llanesc/lqr-tracking/blob/270f2f5164a668bfb77e19f5191595f1d3913a16/src/lqr_quaternion.cpp#L225
         q_spatial_inv = invert_quaternion(self.q_spatial)
+        print(f"About to compute error with {self.q_spatial}")
         q_error = multiply_quaternions(q_spatial_inv, q_spatial_des)
         # As done in the paper, the w term is set to zero
         q_error[0] = 0
@@ -111,7 +115,7 @@ class LQRController:
         return error
 
     # Equation (15)
-    def compute_control_signal(self, feedforward=False, clamp=False):
+    def compute_control_signal(self, feedforward=False, clamp=False, use_ref=False):
         A = self.compute_A()
         B = self.compute_B()
         # print(A)
@@ -130,7 +134,8 @@ class LQRController:
             self.K, _, _ = lqr(A, B, self.Q, self.R)
             # print("Computed a new K")
         except slycot.exceptions.SlycotArithmeticError:
-            print("Using the old K")
+            pass
+            # print("Using the old K")
 
         error = self.compute_error(
             self.x_spatial_ref, self.q_spatial_ref, self.v_spatial_ref
@@ -139,6 +144,9 @@ class LQRController:
         if feedforward:
             u_ref = self._get_u()
             # u_ref = np.array([0, 0, 0, G])
+            u = u_ref - self.K @ error
+        elif use_ref:
+            u_ref = self._get_u()
             u = u_ref - self.K @ error
         else:
             u = -self.K @ error
@@ -179,16 +187,14 @@ class LQRController:
             ]
         )
         x_dot = np.concatenate((p_dot, q_dot, v_dot))
-        print(x_dot)
         return x_dot
 
-    def q_partial_correction(self):
-        q_norm = np.linalg.norm(self.q_spatial)
+    def q_partial_correction(self, epsilon=1e-12):
+        q_norm = np.linalg.norm(self.q_spatial) + epsilon
         qq_t = np.expand_dims(self.q_spatial, axis=1) @ np.expand_dims(
             self.q_spatial, axis=0
         )
         eye_4 = np.eye(4)
-
         q_partial_correction = (eye_4 - q_norm ** 2 * qq_t) / q_norm
         return q_partial_correction
 
@@ -256,8 +262,12 @@ class LQRController:
         self.v_spatial = self.v_spatial + self.dt * v_dot
 
         if linear_quat_integration:
+            print(f"q was {self.q_spatial}")
+            print(f"q_dot: {q_dot}")
             self.q_spatial = self.q_spatial + self.dt * q_dot
+            print(f"q was updated to {self.q_spatial}")
         else:
+            print("about to do quat intetration")
             self.q_spatial = self.q_spatial + self.dt / 2 * multiply_quaternions(
                 self.q_spatial, q_dot
             )
@@ -270,6 +280,8 @@ class LQRController:
         feedforward_ref=False,
         plot_just_position=False,
         clamp=False,
+        linear_quat_integration=False,
+        use_ref_thrust=True,
     ):
         if (
             self.x_spatial_ref is None
@@ -282,9 +294,9 @@ class LQRController:
 
         for _ in times:
             x_dot = self.compute_control_signal(
-                feedforward=feedforward_ref, clamp=clamp
+                feedforward=feedforward_ref, clamp=clamp, use_ref=use_ref_thrust
             )
-            self.update_state(x_dot)
+            self.update_state(x_dot, linear_quat_integration=linear_quat_integration)
             self.state_history.append(self._get_state())
 
         all_states = np.stack(self.state_history, axis=0)
