@@ -79,7 +79,7 @@ class LQRController:
         self.q_spatial = state[3:7]
         self.v_spatial = state[7:9]
 
-    def compute_error(self, x_spatial_des, v_spatial_des, q_spatial_des):
+    def compute_error(self, x_spatial_des, q_spatial_des, v_spatial_des):
         x_error = self.x_spatial - x_spatial_des
         v_error = self.v_spatial - v_spatial_des
 
@@ -87,19 +87,30 @@ class LQRController:
         q_error = multiply_quaternions(q_spatial_inv, q_spatial_des)
         # As done in the paper, the w term is set to zero
         q_error[3] = 0
+        error = np.concatenate((x_error, q_error, v_error), axis=0)
+        print(f"Error {error}")
+        return error
 
     # Equation (15)
     def compute_control_signal(self):
         A = self.compute_A()
         B = self.compute_B()
+        # print(A)
+        # print(B)
+        # print(self.Q)
+        # print(self.R)
+
         K, _, _ = lqr(A, B, self.Q, self.R)
-        error = self.compute_error()
+        error = self.compute_error(
+            self.x_spatial_ref, self.q_spatial_ref, self.v_spatial_ref
+        )
+
         u = K @ error
 
         x = self._get_state()
 
         x_dot = A @ x + B @ u
-        return
+        return x_dot
 
     def q_partial_correction(self):
         q_norm = np.linalg.norm(self.q_spatial)
@@ -117,7 +128,7 @@ class LQRController:
             [[0, -x, -y, -z], [x, 0, z, -y], [y, -z, 0, x], [z, y, -x, 0]]
         )
         q_partial_correction = self.q_partial_correction()
-        dqdot_dq = 0.5 * dqdot_dq * q_partial_correction
+        dqdot_dq = 0.5 * dqdot_dq @ q_partial_correction
         return dqdot_dq
 
     # Equation
@@ -126,19 +137,20 @@ class LQRController:
         d_dq_dot_v = np.array([[y, z, w, x], [-x, -w, z, y], [w, -x, -y, z]])
 
         q_partial_correction = self.q_partial_correction()
-        d_dq_dot_v = 2 * self.c * d_dq_dot_v * q_partial_correction
+        d_dq_dot_v = 2 * self.c * d_dq_dot_v @ q_partial_correction
         return d_dq_dot_v
 
     # Equation (16)
     def compute_A(self):
-        A = np.zeros((9, 9))
+        A = np.zeros((10, 10))
         # TODO are these correct?
-        A[0, 6] = 1
-        A[1, 7] = 1
-        A[2, 8] = 1
+        A[0, 7] = 1
+        A[1, 8] = 1
+        A[2, 9] = 1
 
         A[3:7, 3:7] = self.d_dq_q_dot()
-        A[7:9, 3:7] = self.d_dq_dot_v
+        A[7:10, 3:7] = self.d_dq_dot_v()
+        return A
 
     def d_dw_dot_q(self):
         x, y, z, w = self.q_spatial
@@ -154,9 +166,10 @@ class LQRController:
 
     # Equation (17)
     def compute_B(self):
-        B = np.zeros((9, 3))
-        B[3:6, 0:3] = self.d_dw_dot_q()
-        B[7:9, 0:3] = self.d_dc_dot_v()
+        B = np.zeros((10, 4))
+        B[3:7, 0:3] = self.d_dw_dot_q()
+        B[7:10, 3] = self.d_dc_dot_v()
+        return B
 
     def set_ref(self, x_spatial_ref, q_spatial_ref, v_spatial_ref):
         self.x_spatial_ref = x_spatial_ref
@@ -167,7 +180,6 @@ class LQRController:
         x_dot = state_dot[:3]
         q_dot = state_dot[3:7]
         v_dot = state_dot[7:]
-
         self.x_spatial = self.x_spatial + self.dt * x_dot
         self.v_spatial = self.v_spatial + self.dt * v_dot
 
@@ -189,5 +201,5 @@ class LQRController:
         for t in times:
             x_dot = self.compute_control_signal()
             self.update_state(x_dot)
-            print(self._get_state())
+            print(f"State at time {t}: {self._get_state()}")
 
