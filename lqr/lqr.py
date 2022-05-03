@@ -1,8 +1,13 @@
 from audioop import mul
-from control import lqr
+
+import matplotlib.pyplot as plt
 import numpy as np
+import slycot
+from control import lqr
+from matplotlib.colors import LogNorm
 
 from dynamic_simulation import DynamicsSimulator
+import tqdm
 
 
 def multiply_quaternions(q_1, q_2, unitize: bool = True):
@@ -51,7 +56,7 @@ class LQRController:
         self.q_spatial = q_init
 
         # Control variables
-        self.angular_vel_body = np.ones(4) * epsilon
+        self.angular_vel_body = np.ones(3) * epsilon
         self.c = epsilon
 
         # Reference variables
@@ -62,12 +67,15 @@ class LQRController:
         # Forward Euler
         self.dt = timestep
 
+        # Plotting
+        self.state_history = []
+
     def _set_u(self, u):
-        self.body_normalized_thrust = u[3]
         self.angular_vel_body = u[:3]
+        self.c = u[3]
 
     def _get_u(self):
-        u = np.concatenate((self.angular_vel_body, [self.body_normalized_thrust]))
+        u = np.concatenate((self.angular_vel_body, [self.c]))
         return u
 
     def _get_state(self):
@@ -88,7 +96,7 @@ class LQRController:
         # As done in the paper, the w term is set to zero
         q_error[3] = 0
         error = np.concatenate((x_error, q_error, v_error), axis=0)
-        print(f"Error {error}")
+        # print(f"Error {error}")
         return error
 
     # Equation (15)
@@ -99,13 +107,29 @@ class LQRController:
         # print(B)
         # print(self.Q)
         # print(self.R)
+        if False:
+            fig, axs = plt.subplots(1, 2)
+            cb1 = axs[0].matshow(A, norm=LogNorm(vmin=1e-12, vmax=10))
+            cb2 = axs[1].matshow(B, norm=LogNorm(vmin=1e-12, vmax=10))
+            plt.colorbar(cb1, ax=axs[0])
+            plt.colorbar(cb2, ax=axs[1])
+            plt.show()
 
-        K, _, _ = lqr(A, B, self.Q, self.R)
+        try:
+            self.K, _, _ = lqr(A, B, self.Q, self.R)
+            # print("Computed a new K")
+        except slycot.exceptions.SlycotArithmeticError:
+            print("Using the old K")
+
         error = self.compute_error(
             self.x_spatial_ref, self.q_spatial_ref, self.v_spatial_ref
         )
 
-        u = K @ error
+        old_u = self._get_u()
+
+        u = old_u + self.K @ error
+        print(u)
+        self._set_u(u)
 
         x = self._get_state()
 
@@ -122,8 +146,10 @@ class LQRController:
         q_partial_correction = (eye_4 - q_norm ** 2 * qq_t) / q_norm
         return q_partial_correction
 
+    # Equation 20
     def d_dq_q_dot(self):
-        x, y, z, w = self.angular_vel_body
+        # TODO This very well might not be right
+        x, y, z = self.angular_vel_body
         dqdot_dq = np.array(
             [[0, -x, -y, -z], [x, 0, z, -y], [y, -z, 0, x], [z, y, -x, 0]]
         )
@@ -188,7 +214,7 @@ class LQRController:
         )
         self.q_spatial = self.q_spatial / np.linalg.norm(self.q_spatial)
 
-    def simulate(self, duration=20):
+    def simulate(self, duration=5):
         if (
             self.x_spatial_ref is None
             or self.q_spatial_ref is None
@@ -201,5 +227,13 @@ class LQRController:
         for t in times:
             x_dot = self.compute_control_signal()
             self.update_state(x_dot)
-            print(f"State at time {t}: {self._get_state()}")
+            self.state_history.append(self._get_state())
+
+        all_states = np.stack(self.state_history, axis=0)
+        names = ("x", "y", "z", "q_x", "q_y", "q_z", "q_w", "x_dot", "y_dot", "z_dot")
+        for i, name in enumerate(names[:3]):
+            plt.plot(all_states[:, i], label=name)
+        plt.legend()
+        plt.show()
+        # print(f"State at time {t}: {self._get_state()}")
 
