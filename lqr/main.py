@@ -9,6 +9,6 @@ if __name__ == "__main__":
 
     controller = LQRController(R, Q, x_init=np.array([0, 0, 0]))
     controller.set_ref(
-        np.array([10, 0, 0]), np.array([0, 0, 0, 1]), np.array([0, 0, 0])
+        np.array([0, 0, 10]), np.array([0, 0, 0, 1]), np.array([0, 0, 0])
     )
     controller.simulate()

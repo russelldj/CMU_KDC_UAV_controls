@@ -111,7 +111,7 @@ class LQRController:
         return error
 
     # Equation (15)
-    def compute_control_signal(self, clamp=False):
+    def compute_control_signal(self, feedforward=False, clamp=False):
         A = self.compute_A()
         B = self.compute_B()
         # print(A)
@@ -136,10 +136,12 @@ class LQRController:
             self.x_spatial_ref, self.q_spatial_ref, self.v_spatial_ref
         )
 
-        old_u = self._get_u()
-        u_ref = np.array([0, 0, 0, G])
-
-        u = u_ref - self.K @ error
+        if feedforward:
+            u_ref = self._get_u()
+            # u_ref = np.array([0, 0, 0, G])
+            u = u_ref - self.K @ error
+        else:
+            u = -self.K @ error
 
         if clamp:
             u[:3] = np.clip(u[:3], -self.clamp_threshold, self.clamp_threshold)
@@ -147,7 +149,7 @@ class LQRController:
 
         self._set_u(u)
 
-        x = self._get_state()
+        # x = self._get_state()
 
         x_dot = self.compute_dynamics(u)
         # x_dot = A @ x + B @ u
@@ -261,7 +263,14 @@ class LQRController:
             )
         self.q_spatial = self.q_spatial / np.linalg.norm(self.q_spatial)
 
-    def simulate(self, duration=20, plot_3d=True):
+    def simulate(
+        self,
+        duration=20,
+        plot_3d=False,
+        feedforward_ref=False,
+        plot_just_position=False,
+        clamp=False,
+    ):
         if (
             self.x_spatial_ref is None
             or self.q_spatial_ref is None
@@ -272,11 +281,14 @@ class LQRController:
         times = np.arange(0, duration, self.dt)
 
         for _ in times:
-            x_dot = self.compute_control_signal()
+            x_dot = self.compute_control_signal(
+                feedforward=feedforward_ref, clamp=clamp
+            )
             self.update_state(x_dot)
             self.state_history.append(self._get_state())
 
         all_states = np.stack(self.state_history, axis=0)
+
         if plot_3d:
             traj = pv.PolyData(all_states[:, :3])
             goal = pv.Sphere(center=self.x_spatial_ref)
@@ -298,7 +310,10 @@ class LQRController:
                 "y_dot",
                 "z_dot",
             )
-            for i, name in enumerate(names):
+            if plot_just_position:
+                names = names[:3]
+
+            for i, name in enumerate(names[:3]):
                 plt.plot(all_states[:, i], label=name)
             plt.legend()
             plt.show()
