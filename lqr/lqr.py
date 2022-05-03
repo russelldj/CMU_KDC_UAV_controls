@@ -1,13 +1,18 @@
 from audioop import mul
+from re import I
 
 import matplotlib.pyplot as plt
 import numpy as np
 import slycot
 from control import lqr
 from matplotlib.colors import LogNorm
+import pyvista as pv
 
 from dynamic_simulation import DynamicsSimulator
 import tqdm
+from vis import add_origin_cube
+
+G = 9.81
 
 
 def multiply_quaternions(q_1, q_2, unitize: bool = True):
@@ -46,7 +51,8 @@ class LQRController:
         v_init=np.array([0, 0, 0]),
         q_init=np.array([0, 0, 0, 1]),
         epsilon=1e-7,
-        timestep=1e-3,
+        timestep=1e-2,
+        clamp_threshold=2,
     ):
         self.R = R
         self.Q = Q
@@ -67,6 +73,9 @@ class LQRController:
 
         # Forward Euler
         self.dt = timestep
+
+        # Hackery
+        self.clamp_threshold = clamp_threshold
 
         # Plotting
         self.state_history = []
@@ -102,7 +111,7 @@ class LQRController:
         return error
 
     # Equation (15)
-    def compute_control_signal(self):
+    def compute_control_signal(self, clamp=False):
         A = self.compute_A()
         B = self.compute_B()
         # print(A)
@@ -128,14 +137,47 @@ class LQRController:
         )
 
         old_u = self._get_u()
+        u_ref = np.array([0, 0, 0, G])
 
-        u = -self.K @ error
-        print(u)
+        u = u_ref - self.K @ error
+
+        if clamp:
+            u[:3] = np.clip(u[:3], -self.clamp_threshold, self.clamp_threshold)
+        # print(u)
+
         self._set_u(u)
 
         x = self._get_state()
 
-        x_dot = A @ x + B @ u
+        x_dot = self.compute_dynamics(u)
+        # x_dot = A @ x + B @ u
+        return x_dot
+
+    def compute_dynamics(self, u):
+        p_dot = self.v_spatial
+
+        q_w, q_x, q_y, q_z = self.q_spatial
+        w_x, w_y, w_z = u[:3]
+        c = u[3]
+
+        v_dot = np.array(
+            [
+                2 * (q_w * q_y + q_x * q_z) * c,
+                2 * (q_y * q_z - q_w * q_x) * c,
+                -G + (1 - 2 * q_x ** 2 - 2 * q_y ** 2) * c,
+            ]
+        )
+
+        q_dot = 0.5 * np.array(
+            [
+                -w_x * q_x - w_y * q_y - w_z * q_z,
+                w_x * q_w + w_z * q_y - w_y * q_z,
+                w_y * q_w - w_z * q_x + w_x * q_z,
+                w_z * q_w + w_y * q_x - w_x * q_y,
+            ]
+        )
+        x_dot = np.concatenate((p_dot, q_dot, v_dot))
+        print(x_dot)
         return x_dot
 
     def q_partial_correction(self):
@@ -219,7 +261,7 @@ class LQRController:
             )
         self.q_spatial = self.q_spatial / np.linalg.norm(self.q_spatial)
 
-    def simulate(self, duration=3):
+    def simulate(self, duration=20, plot_3d=True):
         if (
             self.x_spatial_ref is None
             or self.q_spatial_ref is None
@@ -229,16 +271,36 @@ class LQRController:
 
         times = np.arange(0, duration, self.dt)
 
-        for t in times:
+        for _ in times:
             x_dot = self.compute_control_signal()
             self.update_state(x_dot)
             self.state_history.append(self._get_state())
 
         all_states = np.stack(self.state_history, axis=0)
-        names = ("x", "y", "z", "q_x", "q_y", "q_z", "q_w", "x_dot", "y_dot", "z_dot")
-        for i, name in enumerate(names):
-            plt.plot(all_states[:, i], label=name)
-        plt.legend()
-        plt.show()
+        if plot_3d:
+            traj = pv.PolyData(all_states[:, :3])
+            goal = pv.Sphere(center=self.x_spatial_ref)
+            plotter = pv.Plotter()
+            plotter.add_mesh(goal)
+            plotter.add_mesh(traj, scalars=times)
+            add_origin_cube(plotter)
+            plotter.show()
+        else:
+            names = (
+                "x",
+                "y",
+                "z",
+                "q_x",
+                "q_y",
+                "q_z",
+                "q_w",
+                "x_dot",
+                "y_dot",
+                "z_dot",
+            )
+            for i, name in enumerate(names):
+                plt.plot(all_states[:, i], label=name)
+            plt.legend()
+            plt.show()
         # print(f"State at time {t}: {self._get_state()}")
 
