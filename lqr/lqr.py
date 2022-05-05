@@ -1,4 +1,5 @@
 from audioop import mul
+from builtins import breakpoint
 from re import I
 
 import matplotlib.pyplot as plt
@@ -52,13 +53,14 @@ class LQRController:
         Q,
         x_init=np.array([0, 0, 0]),
         v_init=np.array([0, 0, 0]),
-        q_init=np.array([0, 0, 0, 1]),
+        q_init=np.array([1, 0, 0, 0]),
         epsilon=1e-7,
         timestep=1e-2,
         clamp_threshold=2,
     ):
         self.R = R
         self.Q = Q
+        self.K = np.zeros((4, 10))
 
         # State variables
         self.x_spatial = x_init
@@ -100,14 +102,16 @@ class LQRController:
         self.q_spatial = state[3:7]
         self.v_spatial = state[7:9]
 
-    def compute_error(self, x_spatial_des, q_spatial_des, v_spatial_des):
+    def compute_error(
+        self, x_spatial_des, q_spatial_des, v_spatial_des, subtraction_error=False
+    ):
         x_error = self.x_spatial - x_spatial_des
         v_error = self.v_spatial - v_spatial_des
         # Error formulation taken from
         # https://github.com/llanesc/lqr-tracking/blob/270f2f5164a668bfb77e19f5191595f1d3913a16/src/lqr_quaternion.cpp#L225
         q_spatial_inv = invert_quaternion(self.q_spatial)
-        print(f"About to compute error with {self.q_spatial}")
-        q_error = multiply_quaternions(q_spatial_inv, q_spatial_des)
+        print(f"About to compute error with {self.q_spatial}, {q_spatial_des}")
+        q_error = multiply_quaternions(q_spatial_inv, q_spatial_des, unitize=False)
         # As done in the paper, the w term is set to zero
         q_error[0] = 0
         error = np.concatenate((x_error, q_error, v_error), axis=0)
@@ -143,10 +147,9 @@ class LQRController:
 
         if feedforward:
             u_ref = self._get_u()
-            # u_ref = np.array([0, 0, 0, G])
             u = u_ref - self.K @ error
         elif use_ref:
-            u_ref = self._get_u()
+            u_ref = np.array([0, 0, 0, G])
             u = u_ref - self.K @ error
         else:
             u = -self.K @ error
@@ -275,7 +278,7 @@ class LQRController:
 
     def simulate(
         self,
-        duration=20,
+        duration=2,
         plot_3d=False,
         feedforward_ref=False,
         plot_just_position=False,
@@ -322,10 +325,11 @@ class LQRController:
                 "y_dot",
                 "z_dot",
             )
+            breakpoint()
             if plot_just_position:
                 names = names[:3]
 
-            for i, name in enumerate(names[:3]):
+            for i, name in enumerate(names):
                 plt.plot(all_states[:, i], label=name)
             plt.legend()
             plt.show()
