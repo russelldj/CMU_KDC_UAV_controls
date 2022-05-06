@@ -228,7 +228,27 @@ if __name__ == "__main__":
             plt.savefig("vis/error_plot_lqr.png")
             plt.show()
         elif case == 2:
-            asdf
+            matplotlib.style.use("/home/frc-ag-1/dev/SafeForest/dev/report.mplstyle")
+            files = sorted(Path(args.folder).glob("*.bag"))
+            for i, file in enumerate(files):
+                uav_csv, goal_csv, errors_csv = [
+                    f"{file}{x}" for x in ("_gt.csv", "_goal.csv", "_errors.csv")
+                ]
+                uav, goal, errors = [
+                    pd.read_csv(x) for x in (uav_csv, goal_csv, errors_csv)
+                ]
+                xyz = uav.iloc[:, 1:4].to_numpy().T
+                time = uav.iloc[:, -1].to_numpy().T
+                time = time - time[0]
+                time = time / 1000000000
+                plt.plot(time, xyz[0], label="X")
+                plt.plot(time, xyz[2] - 1, label="Z")
+                plt.xlabel("Time")
+                plt.ylabel("Position")
+                plt.legend()
+                plt.savefig("vis/tracking.png")
+                plt.show()
+                pdb.set_trace()
 
     if args.folder is not None:
         files = Path(args.folder).glob("*.bag")
