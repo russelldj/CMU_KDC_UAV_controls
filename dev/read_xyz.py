@@ -34,6 +34,7 @@ def parse_args():
     parser = ArgumentParser()
     parser.add_argument("--file", default=FILE)
     parser.add_argument("--folder")
+    parser.add_argument("--vis", action="store_true")
     args = parser.parse_args()
     return args
 
@@ -127,59 +128,111 @@ def load_from_file(stem, vis=False):
     return cross_track_error, track_error
 
 
-def show_top_down(files):
+def show_top_down(files, speeds, savefile="vis/figure_8s.png", start_loc=(0, -1.25)):
     uavs = []
-    for file in files:
+    for i, file in enumerate(files):
         uav_csv, goal_csv, errors_csv = [
             f"{file}{x}" for x in ("_gt.csv", "_goal.csv", "_errors.csv")
         ]
         uav, goal, errors = [pd.read_csv(x) for x in (uav_csv, goal_csv, errors_csv)]
+        if i == 0:
+            ref_goal = goal
+        print(goal.shape)
         uavs.append(uav)
-    goal_path = goal.iloc[:, 1:3].to_numpy()
+    goal_path = ref_goal.iloc[:, 1:3].to_numpy()
     uav_paths = [x.iloc[:, 1:3].to_numpy() for x in uavs]
-    plt.scatter(0, -1.25, label="Start/end")
+    plt.scatter(start_loc[0], start_loc[1], label="Start/end")
     plt.plot(goal_path[:, 0], goal_path[:, 1], label="Reference trajectory")
-    plt.plot(uav_paths[0][:, 0], uav_paths[0][:, 1], label="Tracking at 4 m/s")
-    plt.plot(uav_paths[1][:, 0], uav_paths[1][:, 1], label="Tracking at 8 m/s")
-    plt.plot(uav_paths[2][:, 0], uav_paths[2][:, 1], label="Tracking at 12 m/s")
+    for i, speed in enumerate(speeds):
+        plt.plot(
+            uav_paths[i][:, 0],
+            uav_paths[i][:, 1],
+            label="Tracking at {} m/s".format(speed),
+        )
+        # plt.plot(uav_paths[1][:, 0], uav_paths[1][:, 1], label="Tracking at 8 m/s")
+        # plt.plot(uav_paths[2][:, 0], uav_paths[2][:, 1], label="Tracking at 12 m/s")
     plt.legend()
+    plt.axis("equal")
     plt.title("Example Trajectories")
-    plt.savefig("vis/figure_8s.png")
+    plt.savefig(savefile)
     plt.show()
 
 
 if __name__ == "__main__":
-    SPEEDS = [4, 8, 12]
 
     args = parse_args()
+    if args.vis:
+        case = 2
+        if case == 0:
+            SPEEDS = [4, 8, 12]
+            files = sorted(Path(args.folder).glob("**/*.bag"))
+            sorted_files = files[1:3] + files[0:1] + files[4:6] + files[3:4]
 
-    files = sorted(Path(args.folder).glob("**/*.bag"))
-    sorted_files = files[1:3] + files[0:1] + files[4:6] + files[3:4]
+            show_top_down(sorted_files[:3])
 
-    show_top_down(sorted_files[:3])
+            cross_track_errors = []
+            track_errors = []
 
-    cross_track_errors = []
-    track_errors = []
+            for file in sorted_files:
+                cte, te = load_from_file(file, vis=False)
+                cross_track_errors.append(cte)
+                track_errors.append(te)
 
-    for file in sorted_files:
-        cte, te = load_from_file(file, vis=False)
-        cross_track_errors.append(cte)
-        track_errors.append(te)
+            plt.plot(SPEEDS, cross_track_errors[:3], label="Cross Track Figure 8")
+            plt.plot(SPEEDS, cross_track_errors[3:], label="Cross Track Race Track")
+            plt.plot(SPEEDS, track_errors[:3], label="Tracking Figure 8")
+            plt.plot(SPEEDS, track_errors[3:], label="Tracking Race Track")
+            plt.xlabel("Speed (m/s)")
+            plt.ylabel("Error")
+            plt.title("Error Metrics")
+            plt.legend()
+            plt.savefig("vis/error_plot.png")
+            plt.show()
+        elif case == 1:
+            SPEEDS = [1, 2, 4, 8, 12]
+            files = sorted(Path(args.folder).glob("*lqr*/*.bag"))
+            # Deal with non-zero-padded values
+            sorted_files = (
+                files[0:1]
+                + files[2:5]
+                + files[1:2]
+                + files[5:6]
+                + files[7:10]
+                + files[6:7]
+            )
 
-    plt.plot(SPEEDS, cross_track_errors[:3], label="Cross Track Figure 8")
-    plt.plot(SPEEDS, cross_track_errors[3:], label="Cross Track Race Track")
-    plt.plot(SPEEDS, track_errors[:3], label="Tracking Figure 8")
-    plt.plot(SPEEDS, track_errors[3:], label="Tracking Race Track")
-    plt.xlabel("Speed (m/s)")
-    plt.ylabel("Error")
-    plt.title("Error Metrics")
-    plt.legend()
-    plt.savefig("vis/error_plot.png")
-    plt.show()
+            show_top_down(sorted_files[:5], SPEEDS[:3], savefile="vis/lqr_figure_8.png")
+            show_top_down(
+                sorted_files[5:],
+                SPEEDS[:3],
+                savefile="vis/lqr_race_track.png",
+                start_loc=(-0.75, 0),
+            )
+
+            cross_track_errors = []
+            track_errors = []
+
+            for file in sorted_files:
+                cte, te = load_from_file(file, vis=False)
+                cross_track_errors.append(cte)
+                track_errors.append(te)
+
+            plt.plot(SPEEDS, cross_track_errors[:5], label="Cross Track Figure 8")
+            plt.plot(SPEEDS, cross_track_errors[5:], label="Cross Track Race Track")
+            plt.plot(SPEEDS, track_errors[:5], label="Tracking Figure 8")
+            plt.plot(SPEEDS, track_errors[5:], label="Tracking Race Track")
+            plt.xlabel("Speed (m/s)")
+            plt.ylabel("Error")
+            plt.title("Error Metrics")
+            plt.legend()
+            plt.savefig("vis/error_plot_lqr.png")
+            plt.show()
+        elif case == 2:
+            asdf
 
     if args.folder is not None:
         files = Path(args.folder).glob("*.bag")
         for file in files:
-            # print(file)
+            print(file)
             main(file)
     # main(args.file)
